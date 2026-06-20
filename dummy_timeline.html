@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>空き状況</title>
+  <!-- LINE LIFFの公式SDK -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  
+  <style>
+    body { background-color: #F2F4F7; font-family: sans-serif; margin: 0; padding: 0; }
+    .calendar { width: 100%; max-width: 850px; margin: 0 auto; padding: 16px; box-sizing: border-box; }
+    .month-nav { display: flex; justify-content: space-between; align-items: center; font-size: 22px; margin-bottom: 12px; }
+    .timeline-container { background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #D0D5DD; }
+    .hour-block { display: flex; justify-content: space-between; margin-bottom: 10px; gap: 10px; }
+    .time-slot { flex: 1; text-align: center; padding: 12px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; user-select: none; }
+    .time-slot:active { background: #3A7AFE; color: #fff; }
+    
+    /* 🔴 予約が埋まっている時間用のデザイン */
+    .time-slot.booked { 
+      background: #FFEAEA; 
+      color: #E57373; 
+      border: 1px solid #E57373; 
+      cursor: not-allowed; 
+      pointer-events: none; 
+      position: relative;
+    }
+    .time-slot.booked::after {
+      content: "満枠";
+      font-size: 10px;
+      display: block;
+      color: #E57373;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="calendar">
+    <div class="month-nav">
+      <span id="selectedDateTitle">読み込み中...</span>
+    </div>
+    <div class="timeline-container">
+      <div id="timeline" class="timeline"></div>
+    </div>
+  </div>
+
+  <script>
+    // ⚠️【あなたの情報に書き換えてください】
+    const LIFF_ID = "2010335869-v7gGXCYE";
+    const FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfkDvEkX8nTrrEHAoQTICM4G4LUP6rdvanp3qx1q4gHUXGSPg/viewform"; // あなたのフォームURL
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzhU_q5hqx-5Q50nTAo5t_orm18im1fUHKKntz_YTXcvj6j39aW3xjCClSZf_eHSgHB/exec"; // あなたの最新のGASデプロイURL
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const DATE_PARAM = urlParams.get('date');
+    let USER_ID = urlParams.get('userId') || "GUEST_USER";
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      if (DATE_PARAM) {
+        const d = new Date(DATE_PARAM);
+        document.getElementById("selectedDateTitle").textContent = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日の空き状況`;
+      }
+      
+      try {
+        await liff.init({ liffId: LIFF_ID });
+        if (liff.isLoggedIn()) {
+          const profile = await liff.getProfile();
+          USER_ID = profile.userId;
+        }
+      } catch (err) {
+        console.log("LIFF読み込みスキップ: " + err.message);
+      }
+
+      await fetchBookedAndRender();
+    });
+
+    async function fetchBookedAndRender() {
+      let bookedTimes = [];
+      try {
+        const response = await fetch(`${GAS_API_URL}?action=get_booked&date=${DATE_PARAM}`);
+        bookedTimes = await response.json(); 
+      } catch (e) {
+        console.error("予約データの取得に失敗しました:", e);
+      }
+      renderTimelineSlots(bookedTimes);
+    }
+
+    function renderTimelineSlots(bookedTimes) {
+      const times = [];
+      for (let h = 9; h <= 20; h++) {
+        times.push((h < 10 ? "0" + h : h) + ":00");
+        times.push((h < 10 ? "0" + h : h) + ":30");
+      }
+
+      const timeline = document.getElementById("timeline");
+      timeline.innerHTML = "";
+
+      for (let i = 0; i < times.length; i += 2) {
+        const hourBlock = document.createElement("div");
+        hourBlock.className = "hour-block";
+        hourBlock.appendChild(createSlot(times[i], bookedTimes));
+        hourBlock.appendChild(createSlot(times[i + 1], bookedTimes));
+        timeline.appendChild(hourBlock);
+      }
+    }
+
+    function createSlot(time, bookedTimes) {
+      const slot = document.createElement("div");
+      slot.className = "time-slot";
+      slot.textContent = time;
+
+      if (bookedTimes.includes(time)) {
+        slot.classList.add("booked");
+        return slot; 
+      }
+
+       slot.addEventListener("click", () => {
+        // 💡 1. 日付（"2026-06-07"）を、年・月・日に綺麗に分解します
+        const dateParts = DATE_PARAM.split("-");
+        const year = dateParts[0];
+        const month = dateParts[1];
+        const day = dateParts[2];
+
+        // 💡 2. あなたのフォームの実際の受け皿（日付は3分割、時間はそのまま）に完全連動させます
+        const targetFormUrl = FORM_URL +
+          "?usp=pp_url" +
+          "&entry.634118256_year=" + encodeURIComponent(year) +
+          "&entry.634118256_month=" + encodeURIComponent(month) +
+          "&entry.634118256_day=" + encodeURIComponent(day) +
+          "&entry.1613633312=" + encodeURIComponent(time) + // 09:30をそのまま送る
+          "&entry.951828721=" + encodeURIComponent(USER_ID); 
+        
+        window.location.href = targetFormUrl;
+      });
+
+      return slot;
+    }
+  </script>
+</body>
+</html>
